@@ -42,10 +42,7 @@ npm-debug.log*
 # Playwright / MCP output
 .playwright-mcp/
 
-# Screenshots
-*.png
-*.jpg
-*.jpeg
+
 
 # Coverage
 coverage/
