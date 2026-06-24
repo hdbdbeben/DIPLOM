@@ -13,6 +13,10 @@ import {
   mockLogs,
   mockDashboard,
   mockReport,
+  mockOneCOrganizations,
+  mockOneCContracts,
+  mockOneCExportDocuments,
+  mockOneCExchangeLog,
 } from './data';
 
 let nextUserId = 5;
@@ -33,6 +37,10 @@ const statements = [...mockStatements];
 const payments = [...mockPayments];
 const errors = [...mockErrors];
 const logs = [...mockLogs];
+const oneCOrganizations = [...mockOneCOrganizations];
+const oneCContracts = [...mockOneCContracts];
+const oneCExportDocs = [...mockOneCExportDocuments];
+const oneCExchangeLog = [...mockOneCExchangeLog];
 
 function parseId(req: StrictRequest<DefaultBodyType>, paramName: string): number {
   const url = new URL(req.url);
@@ -238,4 +246,80 @@ export const handlers = [
   http.post('/api/admin/backup', () => HttpResponse.json({ ok: true, path: 'asbo_backup_' + new Date().toISOString().slice(0, 10) + '.db' })),
   http.post('/api/admin/restore', () => HttpResponse.json({ ok: true, message: 'База данных восстановлена.' })),
   http.post('/api/admin/reset', () => HttpResponse.json({ ok: true, message: 'Все данные сброшены.' })),
+
+  // ==================== 1С: Интеграция ====================
+
+  http.get('/api/1c/organizations', () => HttpResponse.json(oneCOrganizations)),
+
+  http.get('/api/1c/contracts', () => HttpResponse.json(oneCContracts)),
+
+  http.post('/api/1c/import-contracts', async ({ request }) => {
+    const body = await request.json() as { contractIds: number[] };
+    let imported = 0;
+    for (const cid of body.contractIds) {
+      const contract = oneCContracts.find((c) => c.id === cid);
+      if (contract) {
+        const exists = clients.find((cl) => cl.inn === contract.clientInn);
+        if (!exists) {
+          const newClient = { id: nextClientId++, name: contract.clientName, inn: contract.clientInn, kpp: '', account: '', bik: '', status: 'active' };
+          clients.push(newClient);
+        }
+        imported++;
+      }
+    }
+    oneCExchangeLog.unshift({
+      id: oneCExchangeLog.length + 1,
+      operation: 'import_contracts',
+      direction: 'import',
+      description: `Импорт договоров из 1С (${imported} записей)`,
+      count: imported,
+      status: 'success',
+      timestamp: new Date().toISOString().slice(0, 19).replace('T', ' '),
+      userId: 1,
+      userName: 'Чистякова М.В.',
+    });
+    return HttpResponse.json({ imported, clientsCreated: imported });
+  }),
+
+  http.get('/api/1c/export-ready', () => {
+    const ready = oneCExportDocs.filter((d) => d.exportStatus === 'ready');
+    return HttpResponse.json(ready);
+  }),
+
+  http.post('/api/1c/export', async ({ request }) => {
+    const body = await request.json() as { paymentIds: number[] };
+    const details: { paymentId: number; status: string; oneCDocNumber?: string; error?: string }[] = [];
+    let posted = 0;
+    let errCount = 0;
+    for (const pid of body.paymentIds) {
+      const doc = oneCExportDocs.find((d) => d.paymentId === pid);
+      if (doc) {
+        if (doc.clientInn === '771501001234') {
+          doc.exportStatus = 'error';
+          details.push({ paymentId: pid, status: 'error', error: 'Не найден договор с контрагентом в 1С' });
+          errCount++;
+        } else {
+          doc.exportStatus = 'posted';
+          doc.oneCDocNumber = doc.operationType === 'Поступление' ? `ПТД-${String(1000000 + pid).slice(1)}` : `СТД-${String(1000000 + pid).slice(1)}`;
+          doc.oneCDate = new Date().toISOString().slice(0, 10);
+          details.push({ paymentId: pid, status: 'posted', oneCDocNumber: doc.oneCDocNumber });
+          posted++;
+        }
+      }
+    }
+    oneCExchangeLog.unshift({
+      id: oneCExchangeLog.length + 1,
+      operation: 'export_payments',
+      direction: 'export',
+      description: `Экспорт ${body.paymentIds.length} платежей в 1С (проведено: ${posted}, ошибок: ${errCount})`,
+      count: body.paymentIds.length,
+      status: errCount > 0 ? (posted > 0 ? 'partial' : 'error') : 'success',
+      timestamp: new Date().toISOString().slice(0, 19).replace('T', ' '),
+      userId: 1,
+      userName: 'Чистякова М.В.',
+    });
+    return HttpResponse.json({ totalSent: body.paymentIds.length, posted, errors: errCount, details });
+  }),
+
+  http.get('/api/1c/exchange-log', () => HttpResponse.json(oneCExchangeLog)),
 ];
