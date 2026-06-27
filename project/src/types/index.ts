@@ -327,6 +327,19 @@ export interface OneCContract {
   guid: string;
 }
 
+/** Договор контрагента (локальный справочник) */
+export interface Contract {
+  id: number;
+  number: string;
+  date: string;
+  client_id: number;
+  type: string;
+  amount: number;
+  status: string;
+  client_name?: string;
+  client_inn?: string;
+}
+
 /** Документ, подготовленный к экспорту в 1С */
 export interface OneCExportDocument {
   /** ID платежа в АСБО */

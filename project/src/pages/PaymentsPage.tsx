@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { fetchPayments, fetchPayment, updatePayment, fetchClients, fetchPaymentTypes, fetchArticles } from '@/api/endpoints';
+import { fetchPayments, fetchPayment, updatePayment, fetchClients, fetchPaymentTypes, fetchArticles, sendPaymentsToBank } from '@/api/endpoints';
 import { formatDate, formatMoney } from '@/lib/utils';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { showModal, hideModal, showAlert, showToast } from '@/contexts/UIContext';
+import { showModal, hideModal, showAlert, showToast, showConfirm } from '@/contexts/UIContext';
 import type { Payment, Client, PaymentType, Article } from '@/types';
 
 /**
@@ -29,12 +29,26 @@ export function PaymentsPage() {
   const [status, setStatus] = useState('all');
   // Строка текстового поиска
   const [search, setSearch] = useState('');
+  // Значение поиска с задержкой (debounce) — используется в API-запросе
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   // ID выписки для фильтрации (из query-параметра URL)
   const [stmtId] = useState(searchParams.get('statementId') || '');
   // Список платёжных операций
   const [payments, setPayments] = useState<Payment[]>([]);
   // Флаг загрузки данных
   const [loading, setLoading] = useState(true);
+  const [selectedPayments, setSelectedPayments] = useState<Set<number>>(new Set());
+
+  /**
+   * Эффект debounce для строки поиска платежей.
+   *
+   * Задержка 400 мс перед обновлением debouncedSearch предотвращает
+   * избыточные API-запросы при быстром вводе текста.
+   */
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
 
   /**
    * Загружает список платёжных операций с сервера с учётом текущих фильтров.
@@ -48,14 +62,14 @@ export function PaymentsPage() {
    */
   const load = () => {
     setLoading(true);
-    fetchPayments({ statementId: stmtId ? parseInt(stmtId) : undefined, status, search })
+    fetchPayments({ statementId: stmtId ? parseInt(stmtId) : undefined, status, search: debouncedSearch })
       .then(setPayments)
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  // Перезагрузка данных при изменении любого фильтра
-  useEffect(() => { load(); }, [stmtId, status, search]);
+  // Перезагрузка данных при изменении любого фильтра (с debounce для поиска)
+  useEffect(() => { load(); }, [stmtId, status, debouncedSearch]);
 
   /**
    * Открывает модальное окно с деталями платёжной операции и формой классификации.
@@ -126,6 +140,21 @@ export function PaymentsPage() {
     } catch (err) { showAlert('Ошибка: ' + (err as Error).message); }
   };
 
+  const togglePayment = (id: number) => {
+    setSelectedPayments((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  };
+
+  const handleSendToBank = async () => {
+    if (selectedPayments.size === 0) { showAlert('Выберите платежи для отправки в банк'); return; }
+    if (!(await showConfirm(`Сформировать файл платёжных поручений (${selectedPayments.size} шт.) для отправки в банк?`))) return;
+    try {
+      await sendPaymentsToBank(Array.from(selectedPayments));
+      showToast('Файл платёжных поручений сформирован', 'success');
+      setSelectedPayments(new Set());
+      load();
+    } catch (err) { showAlert((err as Error).message); }
+  };
+
   return (
     <div className="content-page active">
       {/* Панель фильтров: текстовый поиск, фильтр по статусу, индикатор выписки */}
@@ -139,6 +168,9 @@ export function PaymentsPage() {
         {/* Бейдж с ID выписки — отображается при фильтрации по конкретной выписке */}
         {stmtId && <span className="badge badge-info">Выписка #{stmtId}</span>}
         <button className="btn btn-primary" onClick={() => navigate('/payments/new')}>+ Создать платёж</button>
+        <button className="btn btn-outline" onClick={handleSendToBank} disabled={selectedPayments.size === 0}>
+          Отправить в банк ({selectedPayments.size})
+        </button>
       </div>
       <div className="page-scroll">
         <div className="panel">
@@ -146,11 +178,12 @@ export function PaymentsPage() {
           {/* Спиннер загрузки или таблица с данными */}
           {loading ? <LoadingSpinner /> : (
             <table className="table">
-              <thead><tr><th>ID</th><th>Дата</th><th>Номер</th><th>Контрагент</th><th>Сумма</th><th>Назначение</th><th>Статус</th><th></th></tr></thead>
+              <thead><tr><th></th><th>ID</th><th>Дата</th><th>Номер</th><th>Контрагент</th><th>Сумма</th><th>Назначение</th><th>Статус</th><th></th></tr></thead>
               <tbody>
-                {/* Строки таблицы: ID, дата, номер документа, контрагент, сумма, назначение (до 50 симв.), статус, кнопка деталей */}
                 {payments.map((p) => (
-                  <tr key={p.id}><td>{p.id}</td><td>{formatDate(p.doc_date)}</td><td>{p.doc_number}</td><td>{p.client_name || p.payer_name || p.payee_name}</td><td>{formatMoney(p.amount)}</td><td>{(p.purpose || '').substring(0, 50)}</td><td><StatusBadge status={p.status} /></td><td><button className="btn btn-sm btn-outline" onClick={() => handleShowDetail(p.id)}>Детали</button></td></tr>
+                  <tr key={p.id}>
+                    <td><input type="checkbox" checked={selectedPayments.has(p.id)} onChange={() => togglePayment(p.id)} /></td>
+                    <td>{p.id}</td><td>{formatDate(p.doc_date)}</td><td>{p.doc_number}</td><td>{p.client_name || p.payer_name || p.payee_name}</td><td>{formatMoney(p.amount)}</td><td>{(p.purpose || '').substring(0, 50)}</td><td><StatusBadge status={p.status} /></td><td><button className="btn btn-sm btn-outline" onClick={() => handleShowDetail(p.id)}>Детали</button></td></tr>
                 ))}
               </tbody>
             </table>

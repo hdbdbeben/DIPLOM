@@ -23,9 +23,9 @@ export async function findAll(search?: string): Promise<ClientRow[]> {
   const params: string[] = [];
   // Динамическое добавление условий поиска по названию и ИНН
   if (search) {
-    sql += ' WHERE name LIKE ? OR inn LIKE ?';
-    // Оборачиваем поисковую строку в % для частичного совпадения
-    params.push(`%${search}%`, `%${search}%`);
+    sql += ' WHERE LOWER(name) LIKE LOWER(?) OR LOWER(inn) LIKE LOWER(?) OR LOWER(kpp) LIKE LOWER(?) OR LOWER(account) LIKE LOWER(?)';
+    const s = `%${search}%`;
+    params.push(s, s, s, s);
   }
   sql += ' ORDER BY id';
   return query<ClientRow>(sql, params);

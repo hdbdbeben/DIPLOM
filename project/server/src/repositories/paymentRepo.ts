@@ -44,10 +44,9 @@ export async function findAll(params: {
   if (params.statementId) { sql += ' AND p.statement_id = ?'; values.push(params.statementId); }
   if (params.status && params.status !== 'all') { sql += ' AND p.status = ?'; values.push(params.status); }
   if (params.search) {
-    // Поиск по пяти полям: плательщик, получатель, ИНН плательщика, ИНН получателя, назначение
-    sql += ' AND (p.payer_name LIKE ? OR p.payee_name LIKE ? OR p.payer_inn LIKE ? OR p.payee_inn LIKE ? OR p.purpose LIKE ?)';
+    sql += ' AND (LOWER(p.doc_number) LIKE LOWER(?) OR LOWER(p.payer_name) LIKE LOWER(?) OR LOWER(p.payee_name) LIKE LOWER(?) OR LOWER(p.payer_inn) LIKE LOWER(?) OR LOWER(p.payee_inn) LIKE LOWER(?) OR LOWER(p.purpose) LIKE LOWER(?))';
     const s = `%${params.search}%`;
-    values.push(s, s, s, s, s);
+    values.push(s, s, s, s, s, s);
   }
   // Ограничение в 500 записей для предотвращения проблем с производительностью
   sql += ' ORDER BY p.id DESC LIMIT 500';

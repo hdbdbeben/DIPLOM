@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { fetchStatements, uploadStatement, deleteStatement } from '@/api/endpoints';
+import { fetchStatements, uploadStatement, deleteStatement, exportStatementTo1C } from '@/api/endpoints';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDate, escapeHtml } from '@/lib/utils';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -228,6 +228,24 @@ export function StatementsPage() {
     }
   };
 
+  /**
+   * Обработчик экспорта выписки в формат 1CClientBankExchange.
+   *
+   * Запрашивает у сервера сгенерированный файл и инициирует его скачивание
+   * через браузер. Файл готов к загрузке в 1С через обработку «Загрузка из банка».
+   *
+   * @param id - Идентификатор выписки для экспорта
+   * @async
+   */
+  const handleExport = async (id: number) => {
+    try {
+      await exportStatementTo1C(id);
+      showToast('Файл экспортирован в формате 1CClientBankExchange', 'success');
+    } catch (err) {
+      showAlert('Ошибка экспорта: ' + (err as Error).message);
+    }
+  };
+
   return (
     <div className="content-page active">
       {/* Панель инструментов: кнопки загрузки файла и демо-выписки */}
@@ -276,6 +294,8 @@ export function StatementsPage() {
                     <td>
                       {/* Переход к списку операций данной выписки с фильтром по statementId */}
                       <button className="btn btn-sm btn-outline" style={{ marginRight: 6 }} onClick={() => navigate(`/payments?statementId=${s.id}`)}>Операции</button>
+                      {/* Экспорт в 1CClientBankExchange для загрузки в 1С */}
+                      <button className="btn btn-sm btn-secondary" style={{ marginRight: 6 }} onClick={() => handleExport(s.id)}>Экспорт в 1С</button>
                       {/* Удаление выписки с предварительным подтверждением */}
                       <button className="btn btn-sm btn-danger" onClick={() => handleDelete(s.id)}>Удалить</button>
                     </td>

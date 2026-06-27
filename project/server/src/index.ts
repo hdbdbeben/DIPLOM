@@ -25,6 +25,8 @@ import reportRoutes from './routes/reports';
 import dashboardRoutes from './routes/dashboard';
 import adminRoutes from './routes/admin';
 import oneCRoutes from './routes/oneC';
+import contractRoutes from './routes/contracts';
+import { startScheduler } from './utils/scheduler';
 
 /** Экземпляр Express-приложения */
 const app = express();
@@ -80,6 +82,8 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/admin', adminRoutes);
 // Интеграция с 1С:Предприятие (импорт справочников, экспорт платежей, журнал обмена)
 app.use('/api/1c', oneCRoutes);
+// Управление договорами контрагентов (CRUD справочника договоров)
+app.use('/api/contracts', contractRoutes);
 
 // --- Запуск HTTP-сервера ---
 // Порт берётся из переменной окружения или используется 3000 по умолчанию
@@ -96,4 +100,6 @@ app.listen(PORT, () => {
   console.log('  Демо:    admin/admin');
   console.log('============================================');
   console.log('Нажмите Ctrl+C для остановки');
+
+  startScheduler();
 });

@@ -94,4 +94,44 @@ export const api = {
   del<T>(path: string): Promise<T> {
     return request<T>('DELETE', path);
   },
+  /** GET-запрос, возвращающий Blob (для скачивания файлов) */
+  async getBlob(path: string): Promise<void> {
+    const url = BASE + path;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new ApiError(text || `Ошибка сервера (${res.status})`, res.status, text);
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('content-disposition');
+    const match = disposition?.match(/filename="?([^";\n]+)"?/);
+    const filename = match?.[1] || 'export.txt';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  },
+  /** POST-запрос, возвращающий Blob (для скачивания файлов) */
+  async postBlob(path: string, body?: unknown, fallbackFilename?: string): Promise<void> {
+    const url = BASE + path;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new ApiError(text || `Ошибка сервера (${res.status})`, res.status, text);
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('content-disposition');
+    const match = disposition?.match(/filename="?([^";\n]+)"?/);
+    const filename = match?.[1] || fallbackFilename || 'export.txt';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  },
 };

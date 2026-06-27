@@ -10,6 +10,7 @@ import type {
   Role,
   Bank,
   Client,
+  Contract,
   PaymentType,
   Article,
   Statement,
@@ -411,6 +412,43 @@ export function exportToOneC(paymentIds: number[]) {
   return api.post<OneCExportResult>('/1c/export', { paymentIds });
 }
 
+export function exportStatementTo1C(id: number) {
+  return api.getBlob('/statements/' + id + '/export');
+}
+
 export function fetchOneCExchangeLog() {
   return api.get<OneCExchangeLogEntry[]>('/1c/exchange-log');
+}
+
+// ==================== Договоры ====================
+
+export function fetchContracts(search?: string) {
+  const query = search ? '?search=' + encodeURIComponent(search) : '';
+  return api.get<Contract[]>('/contracts' + query);
+}
+
+export function fetchContract(id: number) {
+  return api.get<Contract>('/contracts/' + id);
+}
+
+export function createContract(data: { number: string; date: string; clientId: number; type: string; amount?: number; status?: string }) {
+  return api.post<{ id: number }>('/contracts', data);
+}
+
+export function updateContract(id: number, data: { number: string; date: string; clientId: number; type: string; amount?: number; status?: string }) {
+  return api.put<{ ok: true }>('/contracts/' + id, data);
+}
+
+export function deleteContract(id: number) {
+  return api.del<{ ok: true }>('/contracts/' + id);
+}
+
+// ==================== Отправка в банк ====================
+
+export function sendPaymentsToBank(paymentIds: number[], userId?: number) {
+  return api.postBlob('/payments/send-to-bank', { paymentIds, userId }, 'payment_orders.txt');
+}
+
+export function sendPaymentsToBankFtp(paymentIds: number[], userId?: number) {
+  return api.post<{ success: boolean; path?: string; error?: string; paymentsSent: number }>('/payments/send-to-bank-ftp', { paymentIds, userId });
 }

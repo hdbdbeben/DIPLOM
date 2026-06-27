@@ -191,6 +191,25 @@ function initSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_errors_status ON errors(status);
 
+    -- ================== Договоры контрагентов ==================
+    -- number: номер договора
+    -- date: дата договора
+    -- client_id: ссылка на контрагента (FK → clients)
+    -- type: вид договора (С покупателем / С поставщиком)
+    -- amount: сумма договора (если указана)
+    -- status: active | inactive
+    CREATE TABLE IF NOT EXISTS contracts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      number TEXT NOT NULL,
+      date TEXT NOT NULL,
+      client_id INTEGER NOT NULL,
+      type TEXT NOT NULL DEFAULT 'С покупателем',
+      amount REAL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_contracts_client ON contracts(client_id);
+
     -- ================== Журнал действий пользователей (аудит) ==================
     -- Фиксирует все значимые действия: загрузка выписок, исправление ошибок и т.д.
     CREATE TABLE IF NOT EXISTS logs (
@@ -201,6 +220,26 @@ function initSchema(): void {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
     );
     CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
+
+    -- ================== Журнал обмена с 1С ==================
+    -- operation: тип операции (import_orgs, import_contracts, export_payments)
+    -- direction: направление (import / export)
+    -- description: описание операции
+    -- count: количество записей
+    -- status: success / partial / error
+    -- user_id: пользователь, выполнивший операцию
+    CREATE TABLE IF NOT EXISTS onec_exchange_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      operation TEXT NOT NULL,
+      direction TEXT NOT NULL DEFAULT 'import',
+      description TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'success',
+      user_id INTEGER,
+      timestamp TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_onec_log_timestamp ON onec_exchange_log(timestamp);
   `);
 
   // Миграция: добавление колонок, отсутствующих в ранних версиях схемы
@@ -280,6 +319,16 @@ export function seedData(force = false): void {
     d.prepare("INSERT INTO payment_types (code, name) VALUES (?,?)").run('IN', 'Поступление');
     d.prepare("INSERT INTO payment_types (code, name) VALUES (?,?)").run('OUT', 'Списание');
     d.prepare("INSERT INTO payment_types (code, name) VALUES (?,?)").run('TRANSFER', 'Внутренний перевод');
+
+    // ---------- Договоры контрагентов ----------
+    d.prepare("INSERT INTO contracts (number, date, client_id, type, amount, status) VALUES (?,?,?,?,?,?)").run('1595/92', '2026-04-01', 1, 'С покупателем', 500000, 'active');
+    d.prepare("INSERT INTO contracts (number, date, client_id, type, amount, status) VALUES (?,?,?,?,?,?)").run('2026-045', '2026-01-15', 4, 'С покупателем', 2500000, 'active');
+    d.prepare("INSERT INTO contracts (number, date, client_id, type, amount, status) VALUES (?,?,?,?,?,?)").run('45', '2026-02-12', 5, 'С поставщиком', 180000, 'active');
+    d.prepare("INSERT INTO contracts (number, date, client_id, type, amount, status) VALUES (?,?,?,?,?,?)").run('FL-887', '2026-03-01', 2, 'С поставщиком', 96000, 'active');
+    d.prepare("INSERT INTO contracts (number, date, client_id, type, amount, status) VALUES (?,?,?,?,?,?)").run('МТ-445', '2026-04-10', 7, 'С поставщиком', 43200, 'active');
+    d.prepare("INSERT INTO contracts (number, date, client_id, type, amount, status) VALUES (?,?,?,?,?,?)").run('567-С/2026', '2026-01-20', 17, 'С поставщиком', 128000, 'active');
+    d.prepare("INSERT INTO contracts (number, date, client_id, type, amount, status) VALUES (?,?,?,?,?,?)").run('КЛ-556', '2026-05-01', 12, 'С поставщиком', 77000, 'active');
+    d.prepare("INSERT INTO contracts (number, date, client_id, type, amount, status) VALUES (?,?,?,?,?,?)").run('МЭ-334', '2026-01-01', 13, 'С поставщиком', 324000, 'active');
 
     // ---------- Статьи движения денежных средств (доходы/расходы) ----------
     d.prepare("INSERT INTO articles (code, name, type) VALUES (?,?,?)").run('DDC_001', 'Поступления от оказания социальных услуг', 'income');
@@ -381,6 +430,16 @@ export function seedDemoIfEmpty(): void {
   d.prepare("INSERT INTO logs (user_id, action) VALUES (?,?)").run(2, 'Загружена выписка: demo_june_2026.txt (5 операций)');
   d.prepare("INSERT INTO logs (user_id, action) VALUES (?,?)").run(1, 'Ошибка №4 решена (ООО "ТехСнаб")');
   d.prepare("INSERT INTO logs (user_id, action) VALUES (?,?)").run(2, 'Ошибка №5 взята в работу');
+
+  // --- Журнал обмена с 1С (демонстрационные записи) ---
+  d.prepare("INSERT INTO onec_exchange_log (operation, direction, description, count, status, user_id, timestamp) VALUES (?,?,?,?,?,?,?)")
+    .run('import_orgs', 'import', 'Импорт организаций из 1С: ООО «Социальные услуги», ООО «Соцуслуги-НН»', 2, 'success', 1, `${y}-${m}-01 08:00:00`);
+  d.prepare("INSERT INTO onec_exchange_log (operation, direction, description, count, status, user_id, timestamp) VALUES (?,?,?,?,?,?,?)")
+    .run('import_contracts', 'import', 'Импорт договоров из 1С: 8 договоров, создано клиентов: 2', 8, 'success', 1, `${y}-${m}-01 08:05:00`);
+  d.prepare("INSERT INTO onec_exchange_log (operation, direction, description, count, status, user_id, timestamp) VALUES (?,?,?,?,?,?,?)")
+    .run('export_payments', 'export', 'Экспорт платежей в 1С (отправлено: 14, проведено: 14, ошибок: 0)', 14, 'success', 2, `${y}-${m}-05 12:00:00`);
+  d.prepare("INSERT INTO onec_exchange_log (operation, direction, description, count, status, user_id, timestamp) VALUES (?,?,?,?,?,?,?)")
+    .run('export_payments', 'export', 'Экспорт платежей в 1С (отправлено: 5, проведено: 4, ошибок: 1)', 5, 'partial', 2, `${y}-${m}-10 15:30:00`);
 }
 
 /**

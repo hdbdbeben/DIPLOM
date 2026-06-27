@@ -61,6 +61,19 @@ export interface PaymentTypeRow {
   name: string;            // Поступление, Списание, Внутренний перевод
 }
 
+/** Строка таблицы contracts (договор контрагента) */
+export interface ContractRow {
+  id: number;
+  number: string;
+  date: string;
+  client_id: number;
+  type: string;
+  amount: number;
+  status: string;
+  client_name?: string;
+  client_inn?: string;
+}
+
 /** Строка таблицы articles (статья ДДС) */
 export interface ArticleRow {
   id: number;
@@ -220,6 +233,16 @@ export interface PaymentCreateBody {
   clientId: number | null;
   contractId: number | null;
   contractNumber: string;
+  status?: string;
+}
+
+/** Тело запроса POST/PUT /api/contracts */
+export interface ContractBody {
+  number: string;
+  date: string;
+  clientId: number;
+  type: string;
+  amount?: number;
   status?: string;
 }
 

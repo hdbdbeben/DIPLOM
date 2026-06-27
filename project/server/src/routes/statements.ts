@@ -9,8 +9,10 @@
 
 import { Router, Request, Response } from 'express';
 import * as stmtRepo from '../repositories/statementRepo';
-import type { StatementBody } from '../types';
+import type { StatementBody, StatementRow, PaymentRow } from '../types';
 import { parseNumber, extractInn, extractName, normalizeDate } from '../utils/parsing';
+import { generate1CClientBankExchange } from '../utils/1c-export';
+import { query, queryOne } from '../db';
 
 const router = Router();
 
@@ -132,6 +134,40 @@ router.post('/', async (req: Request, res: Response) => {
  * @returns {Object} 200 — объект { ok: true } при успешном удалении.
  * @returns {Object} 500 — внутренняя ошибка сервера.
  */
+/**
+ * GET /api/statements/:id/export
+ * Экспорт выписки в формате 1CClientBankExchange для последующей загрузки в 1С.
+ *
+ * @description Генерирует текстовый файл, содержащий все платёжные документы
+ *   выписки в формате, совместимом со штатной обработкой 1С «Загрузка из банка».
+ *   Возвращает файл как вложение с Content-Type text/plain и кодировкой Windows-1251.
+ *
+ * @route {GET} /:id/export
+ * @param {Request} req - Объект запроса Express.
+ *   Параметр пути: id (number) — идентификатор выписки.
+ * @param {Response} res - Объект ответа Express.
+ * @returns {text/plain} 200 — текстовый файл в формате 1CClientBankExchange.
+ * @returns {Object} 404 — выписка не найдена.
+ * @returns {Object} 500 — внутренняя ошибка сервера.
+ */
+router.get('/:id/export', async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const statement = queryOne<StatementRow>('SELECT * FROM statements WHERE id = ?', [id]);
+    if (!statement) return res.status(404).json({ error: 'Выписка не найдена' });
+
+    const payments = query<PaymentRow>(
+      'SELECT * FROM payments WHERE statement_id = ? ORDER BY id', [id]
+    );
+
+    const content = generate1CClientBankExchange(statement, payments);
+
+    res.setHeader('Content-Type', 'text/plain; charset=windows-1251');
+    res.setHeader('Content-Disposition', `attachment; filename="export_${id}.txt"`);
+    res.send(Buffer.from(content, 'utf-8'));
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+});
+
 router.delete('/:id', async (req: Request, res: Response) => {
   try { await stmtRepo.deleteStatement(Number(req.params.id)); res.json({ ok: true }); }
   catch (err) { res.status(500).json({ error: (err as Error).message }); }

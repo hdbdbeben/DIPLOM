@@ -4,15 +4,16 @@ import {
   fetchBanks, createBank, updateBank, deleteBank,
   fetchPaymentTypes, createPaymentType, updatePaymentType, deletePaymentType,
   fetchArticles, createArticle, updateArticle, deleteArticle,
+  fetchContracts, createContract, updateContract, deleteContract,
 } from '@/api/endpoints';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Tabs } from '@/components/ui/Tabs';
 import { showModal, hideModal, showAlert, showToast, showConfirm } from '@/contexts/UIContext';
-import type { Client, Bank, PaymentType, Article } from '@/types';
+import type { Client, Bank, PaymentType, Article, Contract } from '@/types';
 
 /** Ключи вкладок справочников */
-type TabKey = 'clients' | 'banks' | 'paymentTypes' | 'articles';
+type TabKey = 'clients' | 'banks' | 'paymentTypes' | 'articles' | 'contracts';
 
 /**
  * Форма создания/редактирования контрагента.
@@ -81,6 +82,22 @@ function ArticleForm({ init }: { init?: Article }) {
   );
 }
 
+function ContractForm({ init, clients }: { init?: Contract; clients: Client[] }) {
+  return (
+    <form onSubmit={e => e.preventDefault()}>
+      <div className="form-row">
+        <div className="form-group"><label>Номер</label><input name="number" defaultValue={init?.number || ''} /></div>
+        <div className="form-group"><label>Дата</label><input name="date" type="date" defaultValue={init?.date || ''} /></div>
+      </div>
+      <div className="form-group"><label>Контрагент</label><select name="clientId" defaultValue={init?.client_id || ''}>{clients.map(c => <option key={c.id} value={c.id}>{c.name} (ИНН {c.inn})</option>)}</select></div>
+      <div className="form-row">
+        <div className="form-group"><label>Вид договора</label><select name="type" defaultValue={init?.type || 'С покупателем'}><option value="С покупателем">С покупателем</option><option value="С поставщиком">С поставщиком</option></select></div>
+        <div className="form-group"><label>Сумма</label><input name="amount" type="number" step="0.01" defaultValue={init?.amount || ''} /></div>
+      </div>
+    </form>
+  );
+}
+
 /**
  * Извлекает значения всех полей формы в виде объекта Record<string, string>.
  *
@@ -128,6 +145,7 @@ export function DirectoriesPage() {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [ptypes, setPTypes] = useState<PaymentType[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
   // Флаг загрузки данных
   const [loading, setLoading] = useState(false);
 
@@ -169,6 +187,8 @@ export function DirectoriesPage() {
    */
   const loadArticles = useCallback(async () => { setLoading(true); try { setArticles(await fetchArticles()); } catch {} setLoading(false); }, []);
 
+  const loadContracts = useCallback(async () => { setLoading(true); try { setContracts(await fetchContracts()); } catch {} setLoading(false); }, []);
+
   /**
    * Эффекты загрузки данных при смене активной вкладки.
    * Каждый эффект срабатывает только для своей вкладки, что позволяет
@@ -178,6 +198,7 @@ export function DirectoriesPage() {
   useEffect(() => { if (activeTab === 'banks') loadBanks(); }, [loadBanks, activeTab]);
   useEffect(() => { if (activeTab === 'paymentTypes') loadPT(); }, [loadPT, activeTab]);
   useEffect(() => { if (activeTab === 'articles') loadArticles(); }, [loadArticles, activeTab]);
+  useEffect(() => { if (activeTab === 'contracts') { loadContracts(); loadClients(); } }, [loadContracts, activeTab]);
 
   /**
    * Открывает модальное окно для добавления нового контрагента.
@@ -294,6 +315,24 @@ export function DirectoriesPage() {
       }}>Сохранить</button><button className="btn btn-outline" onClick={hideModal}>Отмена</button></>);
   };
 
+  const handleAddContract = () => {
+    showModal('Добавить договор', <ContractForm clients={clients} />,
+      <><button className="btn btn-primary" onClick={async () => {
+        const form = document.querySelector('.modal-body form') as HTMLFormElement; if (!form) return;
+        const data = readForm(form); if (!data.number || !data.date || !data.clientId) { showAlert('Заполните обязательные поля'); return; }
+        try { await createContract({ number: data.number, date: data.date, clientId: parseInt(data.clientId), type: data.type, amount: data.amount ? parseFloat(data.amount) : undefined }); hideModal(); showToast('Сохранено', 'success'); loadContracts(); } catch (err) { showAlert((err as Error).message); }
+      }}>Сохранить</button><button className="btn btn-outline" onClick={hideModal}>Отмена</button></>);
+  };
+
+  const handleEditContract = (c: Contract) => {
+    showModal('Редактировать', <ContractForm init={c} clients={clients} />,
+      <><button className="btn btn-primary" onClick={async () => {
+        const form = document.querySelector('.modal-body form') as HTMLFormElement; if (!form) return;
+        const data = readForm(form); if (!data.number || !data.date || !data.clientId) { showAlert('Заполните обязательные поля'); return; }
+        try { await updateContract(c.id, { number: data.number, date: data.date, clientId: parseInt(data.clientId), type: data.type, amount: data.amount ? parseFloat(data.amount) : undefined }); hideModal(); showToast('Сохранено', 'success'); loadContracts(); } catch (err) { showAlert((err as Error).message); }
+      }}>Сохранить</button><button className="btn btn-outline" onClick={hideModal}>Отмена</button></>);
+  };
+
   /**
    * Универсальный обработчик удаления записи из любого справочника.
    *
@@ -312,20 +351,22 @@ export function DirectoriesPage() {
       if (type === 'client') await deleteClient(id);
       else if (type === 'bank') await deleteBank(id);
       else if (type === 'pt') await deletePaymentType(id);
-      else await deleteArticle(id);
+      else if (type === 'article') await deleteArticle(id);
+      else await deleteContract(id);
       showToast('Удалено', 'success');
       // Перезагрузка данных активной вкладки
       if (activeTab === 'clients') loadClients();
       else if (activeTab === 'banks') loadBanks();
       else if (activeTab === 'paymentTypes') loadPT();
-      else loadArticles();
+      else if (activeTab === 'articles') loadArticles();
+      else loadContracts();
     } catch (err) { showAlert((err as Error).message); }
   };
 
   return (
     <div className="content-page active">
       {/* Вкладки справочников: контрагенты, банки, типы платежей, статьи ДДС */}
-      <Tabs items={[{ key: 'clients', label: 'Контрагенты' }, { key: 'banks', label: 'Банки' }, { key: 'paymentTypes', label: 'Типы платежей' }, { key: 'articles', label: 'Статьи ДДС' }]} activeTab={activeTab} onTabChange={k => setActiveTab(k as TabKey)} />
+      <Tabs items={[{ key: 'clients', label: 'Контрагенты' }, { key: 'banks', label: 'Банки' }, { key: 'paymentTypes', label: 'Типы платежей' }, { key: 'articles', label: 'Статьи ДДС' }, { key: 'contracts', label: 'Договоры' }]} activeTab={activeTab} onTabChange={k => setActiveTab(k as TabKey)} />
       {/* === Вкладка «Контрагенты» === */}
       {activeTab === 'clients' && (
         <div className="dir-panel active">
@@ -368,6 +409,14 @@ export function DirectoriesPage() {
           </div>
         </div>
         )}
+      {activeTab === 'contracts' && (
+        <div className="dir-panel active">
+          <div className="toolbar"><button className="btn btn-primary" onClick={handleAddContract}>Добавить договор</button></div>
+          <div className="table-wrapper">
+            {loading ? <LoadingSpinner /> : <table className="table"><thead><tr><th>ID</th><th>Номер</th><th>Дата</th><th>Контрагент</th><th>ИНН</th><th>Вид</th><th>Сумма</th><th></th></tr></thead><tbody>{contracts.map(c => <tr key={c.id}><td>{c.id}</td><td>{c.number}</td><td>{c.date}</td><td>{c.client_name || '—'}</td><td>{c.client_inn || '—'}</td><td><span className={`badge ${c.type === 'С покупателем' ? 'badge-success' : 'badge-warning'}`}>{c.type}</span></td><td>{c.amount ? c.amount.toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</td><td><button className="btn btn-sm btn-outline" style={{ marginRight: 6 }} onClick={() => handleEditContract(c)}>Ред.</button><button className="btn btn-sm btn-danger" onClick={() => handleDelete('contract', c.id)}>Уд.</button></td></tr>)}</tbody></table>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
