@@ -23,7 +23,14 @@ const router = Router();
  * @returns {Object} 500 — внутренняя ошибка сервера.
  */
 router.get('/', async (_req: Request, res: Response) => {
-  try { res.json(await userRepo.findAll()); } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+  try {
+    const rows = await userRepo.findAll();
+    res.json(rows.map(u => ({
+      id: u.id, login: u.login, fullName: u.full_name,
+      roleId: u.role_id, role: u.role_code, roleName: u.role_name,
+      active: u.active,
+    })));
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 });
 
 /**

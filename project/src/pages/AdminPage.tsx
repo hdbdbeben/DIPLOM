@@ -88,16 +88,20 @@ export function AdminPage() {
   /** Загружает справочник ролей с сервера. Мемоизирован через useCallback. */
   const loadRoles = useCallback(async () => { try { setRoles(await fetchRoles()); } catch {} }, []);
 
+  // Загрузка ролей при монтировании (нужны для формы пользователя на любой вкладке)
+  useEffect(() => { loadRoles(); }, [loadRoles]);
+
   // Автоматическая загрузка данных при переключении вкладок
-  useEffect(() => { if (activeTab === 'users') loadUsers(); else if (activeTab === 'roles') loadRoles(); }, [activeTab, loadUsers, loadRoles]);
+  useEffect(() => { if (activeTab === 'users') loadUsers(); }, [activeTab, loadUsers]);
 
   /**
    * Открывает модальное окно для добавления нового пользователя.
    * Если роли ещё не загружены — сначала загружает их.
    * При сохранении валидирует обязательные поля и отправляет запрос на создание.
    */
-  const handleAddUser = () => {
-    if (!roles.length) { loadRoles(); return; }
+  const handleAddUser = async () => {
+    if (!roles.length) { await loadRoles(); }
+    if (!roles.length) { showAlert('Не удалось загрузить роли'); return; }
     showModal('Добавить пользователя', <UserForm roles={roles} />,
       <><button className="btn btn-primary" onClick={async () => {
         const f = document.querySelector('.modal-body form') as HTMLFormElement; if (!f) return;
@@ -112,7 +116,9 @@ export function AdminPage() {
    * Форма предзаполняется данными пользователя `u`.
    * Пароль отправляется только если был изменён (непустой).
    */
-  const handleEditUser = (u: User) => {
+  const handleEditUser = async (u: User) => {
+    if (!roles.length) { await loadRoles(); }
+    if (!roles.length) { showAlert('Не удалось загрузить роли'); return; }
     showModal('Редактировать', <UserForm roles={roles} init={u} />,
       <><button className="btn btn-primary" onClick={async () => {
         const f = document.querySelector('.modal-body form') as HTMLFormElement; if (!f) return;
